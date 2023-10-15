@@ -1,0 +1,12 @@
+[workspace]
+
+members = [
+    "gui",
+    "registry",
+    "definitions",
+    "logic",
+    "test-app"
+]
+
+[profile.release]
+opt-level = 'z' # Optimize for size
