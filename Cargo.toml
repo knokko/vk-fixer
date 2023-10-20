@@ -1,11 +1,18 @@
-[workspace]
+[package]
+name = "vk-fixer"
+version = "0.1.0"
+edition = "2021"
 
-members = [
-    "gui",
-    "registry",
-    "definitions",
-    "logic",
-    "test-app"
+[dependencies]
+ash = "*"
+serde = { version = "1.0.189", features = ["derive"] }
+serde_json = "1.0.107"
+
+[dependencies.windows]
+version = "0.51.1"
+features = [
+    "Win32_Foundation",
+    "Win32_System_Registry"
 ]
 
 [profile.release]
