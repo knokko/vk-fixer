@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::env::var;
 use std::fs::File;
 use std::io::BufReader;
+use std::process::Command;
 use windows::Win32::System::Registry::*;
 use windows::core::*;
 
@@ -40,41 +41,52 @@ pub fn get_implicit_layers() -> (Vec<ImplicitLayer>, Vec<String>) {
     ([user_layers.unwrap_or(vec![]), machine_layers.unwrap_or(vec![])].concat(), errors)
 }
 
-fn enumerate_layers_of_hkey(root_hkey: HKEY, registry: ImplicitRegistry, errors: &mut Vec<String>) -> Result<Vec<ImplicitLayer>> {
+fn enumerate_keys_of_hkey(root_hkey: HKEY, path: PCSTR) -> Result<Vec<String>> {
     let mut hkey = HKEY::default();
-    let mut num_layers = 0;
-    let mut longest_layer_name_length = 0;
+    let mut num_keys = 0;
+    let mut longest_key_length = 0;
 
     unsafe {
         RegOpenKeyExA(
-            root_hkey, s!("SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers"),
-            0, KEY_READ, &mut hkey
+            root_hkey, path, 0, KEY_READ, &mut hkey
         )?;
         RegQueryInfoKeyA(
             hkey, PSTR::null(), None, None, None,
-            None, None, Some(&mut num_layers),
-            Some(&mut longest_layer_name_length),
+            None, None, Some(&mut num_keys),
+            Some(&mut longest_key_length),
             None, None, None
         )?;
 
-        let mut result = Vec::with_capacity(num_layers as usize);
+        let mut result = Vec::with_capacity(num_keys as usize);
 
-        let mut layer_name_holder = String::with_capacity(longest_layer_name_length as usize);
-        let p_layer_name = PSTR(layer_name_holder.as_mut_ptr());
+        let mut key_holder = String::with_capacity(longest_key_length as usize);
+        let p_key = PSTR(key_holder.as_mut_ptr());
 
-        for index in 0 .. num_layers {
-            let mut current_layer_name_length = longest_layer_name_length + 1;
+        for index in 0 ..num_keys {
+            let mut current_key_length = longest_key_length + 1;
             RegEnumValueA(
-                hkey, index, p_layer_name,
-                &mut current_layer_name_length, None,
+                hkey, index, p_key,
+                &mut current_key_length, None,
                 None, None, None
             )?;
 
-            let settings_path = p_layer_name.to_string()?;
-            extract_layer_settings(&settings_path, registry, &mut result, errors);
+            result.push(p_key.to_string()?);
         }
         Ok(result)
     }
+}
+
+fn enumerate_layers_of_hkey(root_hkey: HKEY, registry: ImplicitRegistry, errors: &mut Vec<String>) -> Result<Vec<ImplicitLayer>> {
+    let layer_paths = enumerate_keys_of_hkey(
+        root_hkey, s!("SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers")
+    )?;
+
+    let mut result = Vec::with_capacity(layer_paths.len());
+    for settings_path in layer_paths {
+        extract_layer_settings(&settings_path, registry, &mut result, errors);
+    }
+
+    Ok(result)
 }
 
 fn extract_layer_settings(path: &str, registry: ImplicitRegistry, dest: &mut Vec<ImplicitLayer>, errors: &mut Vec<String>) {
@@ -117,6 +129,50 @@ fn extract_single_layer_settings(layer: LayerSettings, settings_path: &str, regi
         });
     } else {
         errors.push(format!("Layer {} has empty disable_environment", settings_path));
+    }
+}
+
+fn spawn_remove_command(key: &str) -> bool {
+    Command::new("reg").args(["delete", "HKCU\\Environment", "/v", key, "/f"]).spawn().is_ok()
+}
+pub fn remove_user_environment(key: &str) -> bool {
+    if spawn_remove_command(key) {
+
+        // Unlike the setx command, the reg delete command will NOT refresh the environment
+        // variables. By setting and unsetting a dummy variable, I abuse setx the refresh the
+        // environment variable I care about.
+        let dummy = "force-refresh-dummy";
+        set_user_environment(dummy);
+        let _ = spawn_remove_command(dummy);
+        true
+    } else { false }
+}
+
+pub fn set_user_environment(key: &str) -> bool {
+    Command::new("setx").args([key, "1"]).spawn().is_ok()
+}
+
+pub fn get_global_environment_keys() -> EnvironmentVariables {
+    let mut errors = Vec::new();
+    let user_keys = enumerate_keys_of_hkey(
+        HKEY_CURRENT_USER, s!("Environment")
+    );
+    let system_keys = enumerate_keys_of_hkey(
+        HKEY_LOCAL_MACHINE,
+        s!("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment")
+    );
+
+    if let Err(user_error) = &user_keys {
+        errors.push(user_error.message().to_string());
+    }
+    if let Err(system_error) = &system_keys {
+        errors.push(system_error.message().to_string());
+    }
+
+    EnvironmentVariables {
+        user: user_keys.unwrap_or(vec![]),
+        system: system_keys.unwrap_or(vec![]),
+        errors,
     }
 }
 

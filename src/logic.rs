@@ -1,9 +1,10 @@
 use crate::definitions::*;
 use crate::test_app::{await_test_app, spawn_test_app};
-use crate::registry::{get_implicit_layers, is_enabled};
+use crate::registry::{get_global_environment_keys, get_implicit_layers, is_enabled};
 
 pub fn run_tests() {
     let (all_implicit_layers, errors) = get_implicit_layers();
+    let global_environment_keys = get_global_environment_keys();
     let implicit_layers = all_implicit_layers.into_iter().filter(
         |layer| is_enabled(layer)
     ).collect::<Vec<_>>();

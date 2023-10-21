@@ -32,3 +32,9 @@ pub struct TestResults {
     /// each trial
     pub isolation_results: Vec<(String, TrialResult)>
 }
+
+pub struct EnvironmentVariables {
+    pub user: Vec<String>,
+    pub system: Vec<String>,
+    pub errors: Vec<String>
+}
