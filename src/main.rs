@@ -13,7 +13,8 @@ use std::cell::RefCell;
 use std::io::ErrorKind;
 use std::rc::Rc;
 use crate::definitions::{ImplicitLayer, TestResults, VersionedTrialResults};
-use crate::registry::{get_global_environment_keys, get_implicit_layers, is_enabled, remove_user_environment, set_user_environment};
+use crate::logic::draw_conclusion;
+use crate::registry::*;
 
 fn main() {
     maybe_run_test_app();
