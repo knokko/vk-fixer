@@ -13,3 +13,4 @@ windows = { version = "*", features = ["Win32_Foundation", "Win32_System_Registr
 
 [profile.release]
 opt-level = 'z' # Optimize for size
+strip = true

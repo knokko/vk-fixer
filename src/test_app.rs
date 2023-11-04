@@ -2,18 +2,31 @@ use ash::vk;
 use std::collections::HashMap;
 use std::default::Default;
 use std::env::args;
-use std::process::{exit, Command, Child};
-use crate::definitions::TrialResult;
+use std::process::{exit, Command, Child, Stdio};
+use std::str::FromStr;
+use crate::definitions::{TrialResult, VersionedTrialResults};
 
 pub fn maybe_run_test_app() {
     let args = args().collect::<Vec<_>>();
-    if args.len() == 2 && args[1] == "test-app" {
-        run_test_app();
-        exit(0);
+    if args.len() == 3 && args[1] == "test-app" {
+        if let Ok(api_version) = u32::from_str(&args[2]) {
+            run_test_app(api_version);
+            exit(0);
+        }
     }
 }
 
-pub fn await_test_app(child: std::io::Result<Child>) -> TrialResult {
+pub fn await_test_apps(children: [std::io::Result<Child>; 4]) -> VersionedTrialResults {
+    let [vk10, vk11, vk12, vk13] = children;
+    VersionedTrialResults {
+        vk10: await_test_app(vk10),
+        vk11: await_test_app(vk11),
+        vk12: await_test_app(vk12),
+        vk13: await_test_app(vk13),
+    }
+}
+
+fn await_test_app(child: std::io::Result<Child>) -> TrialResult {
     match child.map(|t| t.wait_with_output()) {
         Err(weird) => TrialResult {
             exit_code: -21021,
@@ -48,7 +61,16 @@ pub fn await_test_app(child: std::io::Result<Child>) -> TrialResult {
 
 }
 
-pub fn spawn_test_app(envs: &[&str]) -> std::io::Result<Child> {
+pub fn spawn_test_apps(envs: &[&str]) -> [std::io::Result<Child>; 4] {
+    [
+        spawn_test_app(envs, vk::API_VERSION_1_0),
+        spawn_test_app(envs, vk::API_VERSION_1_1),
+        spawn_test_app(envs, vk::API_VERSION_1_2),
+        spawn_test_app(envs, vk::API_VERSION_1_3),
+    ]
+}
+
+fn spawn_test_app(envs: &[&str], api_version: u32) -> std::io::Result<Child> {
     let mut env_map: HashMap<&str, &str> = HashMap::new();
     for key in envs {
         env_map.insert(key, "1");
@@ -56,24 +78,29 @@ pub fn spawn_test_app(envs: &[&str]) -> std::io::Result<Child> {
 
     Command::new(
         args().next().expect("First arg should be path to own exe file")
-    ).arg("test-app").envs(env_map).spawn()
+    ).args(["test-app", &api_version.to_string()]).stdout(Stdio::piped()).stderr(Stdio::piped())
+        .envs(env_map).spawn()
 }
 
-fn run_test_app() {
+fn run_test_app(api_version: u32) {
     unsafe {
         let raw_entry = ash::Entry::load();
         if let Err(entry_error) = raw_entry {
-            println!("Failed to load Entry: {:?}", entry_error);
+            print!("Failed to load Entry: {:?}", entry_error);
             exit(-21023);
         }
         let entry = raw_entry.unwrap();
 
-        let ci_instance = vk::InstanceCreateInfo::default();
+        let mut app_info = vk::ApplicationInfo::default();
+        app_info.api_version = api_version;
+
+        let mut ci_instance = vk::InstanceCreateInfo::default();
+        ci_instance.p_application_info = &app_info;
 
         let raw_instance = entry
             .create_instance(&ci_instance, None);
         if let Err(instance_error) = raw_instance {
-            println!("Failed to create VkInstance: {:?}", instance_error);
+            print!("Failed to create VkInstance: {:?}", instance_error);
             exit(-21024);
         }
         let instance = raw_instance.unwrap();
@@ -81,7 +108,7 @@ fn run_test_app() {
         let raw_physical_device = instance
             .enumerate_physical_devices();
         if let Err(device_error) = raw_physical_device {
-            println!("Failed to enumerate physical devices: {:?}", device_error);
+            print!("Failed to enumerate physical devices: {:?}", device_error);
             exit(-21025);
         }
         let physical_device = raw_physical_device.unwrap()[0];
@@ -100,7 +127,7 @@ fn run_test_app() {
         let raw_device = instance
             .create_device(physical_device, &ci_device, None);
         if let Err(device_error) = raw_device {
-            println!("Failed to create VkDevice: {:?}", device_error);
+            print!("Failed to create VkDevice: {:?}", device_error);
             exit(-21026);
         }
         let device = raw_device.unwrap();
