@@ -10,6 +10,7 @@ use logic::run_all_trials;
 use nwd::NwgUi;
 use nwg::{CheckBoxState, NativeUi};
 use std::cell::RefCell;
+use std::io::ErrorKind;
 use std::rc::Rc;
 use crate::definitions::{ImplicitLayer, TestResults, VersionedTrialResults};
 use crate::registry::{get_global_environment_keys, get_implicit_layers, is_enabled, remove_user_environment, set_user_environment};
@@ -27,14 +28,17 @@ fn main() {
         if cloned_state == GuiState::Exit {
             break;
         }
+
         if cloned_state == GuiState::Initial {
             let _ui = FixerApp::build_ui(FixerApp { state: Rc::clone(&state), ..Default::default() }).expect("Failed to build UI");
             nwg::dispatch_thread_events();
         }
-        if cloned_state == GuiState::Manual {
-            let _ui = ManualApp::build_ui(ManualApp { state: Rc::clone(&state), ..Default::default() }).expect("Failed to build UI");
+
+        if let GuiState::Manual(show_break_buttons) = cloned_state {
+            let _ui = ManualApp::build_ui(ManualApp { state: Rc::clone(&state), show_break_buttons, ..Default::default() }).expect("Failed to build UI");
             nwg::dispatch_thread_events();
         }
+
         if cloned_state == GuiState::AutoLayerList {
             let _ui = AutoLayerApp::build_ui(AutoLayerApp { state: Rc::clone(&state), ..Default::default() }).expect("Failed to build UI");
             nwg::dispatch_thread_events();
@@ -51,7 +55,7 @@ fn main() {
 enum GuiState {
     #[default]
     Initial,
-    Manual,
+    Manual(bool),
     AutoLayerList,
     AutoResultsTable(TestResults),
     Exit
@@ -87,7 +91,7 @@ impl FixerApp {
     }
 
     fn start_manual_mode(&self) {
-        *self.state.borrow_mut() = GuiState::Manual;
+        *self.state.borrow_mut() = GuiState::Manual(true);
         nwg::stop_thread_dispatch();
     }
 }
@@ -98,14 +102,16 @@ pub struct ManualApp {
     #[nwg_control(size: (750, 700), center: true, title: "Manual layer selection", flags: "MAIN_WINDOW|VISIBLE")]
     window: nwg::Window,
 
-    #[nwg_layout(parent: window, spacing: 0, margin: [50, 50, 50, 50])]
+    #[nwg_layout(parent: window, spacing: 0, margin: [0, 20, 0, 20])]
     layout: nwg::GridLayout,
 
     layer_names: Rc<RefCell<Vec<nwg::CheckBox>>>,
     layer_info: RefCell<Vec<nwg::Label>>,
+    break_buttons: RefCell<Vec<nwg::Button>>,
     handlers: RefCell<Vec<nwg::EventHandler>>,
 
-    state: Rc<RefCell<GuiState>>
+    state: Rc<RefCell<GuiState>>,
+    show_break_buttons: bool,
 }
 
 impl ManualApp {
@@ -125,7 +131,13 @@ impl ManualApp {
                 .build(&mut label)
                 .expect("Failed to add info");
             let mut layer_info = self.layer_info.borrow_mut();
-            self.layout.add_child(0, (self.layer_names.borrow().len() + layer_info.len()) as u32, &label);
+            self.layout.add_child_item(nwg::GridLayoutItem::new(
+                &label,
+                0,
+                (self.layer_names.borrow().len() + layer_info.len()) as u32,
+                7,
+                1
+            ));
             layer_info.push(label);
         };
 
@@ -133,7 +145,24 @@ impl ManualApp {
         add_info("Note: depending on the game and how the game is launched,");
         add_info("a computer restart may or may not be needed.");
         add_info("");
+        add_info("Alternatively, you can Break layers, which will stop them instantly.");
+        if self.show_break_buttons {
+            add_info("However, breaking usually requires administrator privileges.");
+            add_info("Also, repairing a broken layer is hard, so only do this when you don't need it anymore.");
+        } else {
+            add_info("If you want to Break layers, you need to restart this application");
+            add_info("with administrator privileges.");
+        }
+        add_info("");
         for layer in layers {
+
+            let mut break_button = Default::default();
+            nwg::Button::builder()
+                .text("Break")
+                .parent(&self.window)
+                .build(&mut break_button)
+                .expect("Failed to add break button");
+            let break_button_handle = break_button.handle;
 
             let mut layer_box = Default::default();
             let is_disabled = env.user.contains(&layer.disable_environment);
@@ -144,12 +173,29 @@ impl ManualApp {
                 .build(&mut layer_box)
                 .expect("Failed to add layer checkbox");
 
-            let toggle_handler = layer_box.handle;
+            let layer_path = layer.settings_path.clone();
+            let state_ref = Rc::clone(&self.state);
+            let break_handler = nwg::bind_event_handler(
+                &break_button.handle, &self.window.handle, move |evt, _evt_data, handle| {
+                    if evt == nwg::Event::OnButtonClick && handle == break_button_handle {
+                        let delete_result = std::fs::remove_file(&layer_path);
+                        if let Err(failed_delete) = delete_result {
+                            if failed_delete.kind() == ErrorKind::PermissionDenied {
+                                *state_ref.borrow_mut() = GuiState::Manual(false);
+                            }
+                        }
+
+                        nwg::stop_thread_dispatch();
+                    }
+                }
+            );
+
+            let toggle_handle = layer_box.handle;
             let disable_env = layer.disable_environment.clone();
             let layer_names_ref = Rc::clone(&self.layer_names);
-            let handler = nwg::bind_event_handler(
+            let toggle_handler = nwg::bind_event_handler(
                 &layer_box.handle, &self.window.handle, move |evt, _evt_data, handle| {
-                    if evt == nwg::Event::OnButtonClick && handle == toggle_handler {
+                    if evt == nwg::Event::OnButtonClick && handle == toggle_handle {
                         let mut is_disabled = get_global_environment_keys().user.contains(&disable_env);
                         if is_disabled {
                             is_disabled = !remove_user_environment(&disable_env);
@@ -159,18 +205,36 @@ impl ManualApp {
 
                         let layer_boxes = layer_names_ref.borrow_mut();
                         for layer_box in &*layer_boxes {
-                            if layer_box.handle == toggle_handler {
+                            if layer_box.handle == toggle_handle {
                                 layer_box.set_check_state(if is_disabled { CheckBoxState::Checked } else { CheckBoxState::Unchecked });
                             }
                         }
                     }
             });
-            self.handlers.borrow_mut().push(handler);
+            self.handlers.borrow_mut().push(break_handler);
+            self.handlers.borrow_mut().push(toggle_handler);
 
             let mut layer_names = self.layer_names.borrow_mut();
-            self.layout.add_child(0, (layer_names.len() + self.layer_info.borrow().len()) as u32, &layer_box);
+            self.layout.add_child_item(nwg::GridLayoutItem::new(
+                &layer_box,
+                0,
+                (layer_names.len() + self.layer_info.borrow().len()) as u32,
+                7, 1
+            ));
             layer_names.push(layer_box);
             drop(layer_names);
+
+            if self.show_break_buttons {
+                let mut break_buttons = self.break_buttons.borrow_mut();
+                self.layout.add_child_item(nwg::GridLayoutItem::new(
+                    &break_button,
+                    7,
+                    (self.layer_names.borrow().len() + self.layer_info.borrow().len() - 1) as u32,
+                    1, 1
+                ));
+                break_buttons.push(break_button);
+                drop(break_buttons);
+            }
 
             add_info(&layer.description);
             if let Some(enable_env) = layer.enable_environment {
