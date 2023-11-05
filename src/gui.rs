@@ -20,15 +20,40 @@ pub enum GuiState {
 
 #[derive(Default, nwd::NwgUi)]
 pub struct FixerApp {
-    #[nwg_control(size: (750, 315), center: true, title: "vk-fixer", flags: "MAIN_WINDOW|VISIBLE")]
+    #[nwg_control(size: (750, 400), center: true, title: "vk-fixer", flags: "MAIN_WINDOW|VISIBLE")]
     #[nwg_events( OnWindowClose: [FixerApp::say_goodbye] )]
     pub window: nwg::Window,
 
-    #[nwg_control(text: "Automatic mode", size: (300, 50), position: (50, 200))]
+    #[nwg_control(text:
+    "When your computer can't run any Vulkan game, it is usually caused by one of the following:
+- Outdated graphics drivers (or an old graphics card)
+- Crappy third-party hooks, technically called implicit layers
+
+This application aims to help with solving the second case. Examples of hooks/implicit layers \
+are overlays and screen recording software that always try to attach itself to any Vulkan game. \
+Sometimes, conflicts arise when you have multiple layers on your computer (or just one very bad layer). \
+Such conflicts may prevent your computer from running any Vulkan game at all.",
+    size: (700, 150), position: (25, 20))]
+    pub main_description: nwg::Label,
+
+    #[nwg_control(text:
+    "Automatic mode is the easiest mode: this application will try to automatically \
+detect the bad layer(s), and propose a way to fix it. Unfortunately, this can only detect the \
+most obviously broken layers, but not the subtly broken layers.",
+    size: (300, 100), position: (50, 200))]
+    pub automatic_description: nwg::Label,
+
+    #[nwg_control(text: "Automatic mode", size: (300, 50), position: (50, 325))]
     #[nwg_events( OnButtonClick: [FixerApp::start_automatic_mode] )]
     pub automatic_button: nwg::Button,
 
-    #[nwg_control(text: "Manual mode", size: (300, 50), position: (400, 200))]
+    #[nwg_control(text:
+    "In manual mode, you can choose which layer(s) you want to disable. You can use this to find \
+the culprit with trial and error, or just disable all of them and be done with it.",
+    size: (300, 100), position: (400, 200))]
+    pub manual_description: nwg::Label,
+
+    #[nwg_control(text: "Manual mode", size: (300, 50), position: (400, 325))]
     #[nwg_events( OnButtonClick: [FixerApp::start_manual_mode] )]
     pub manual_button: nwg::Button,
 
