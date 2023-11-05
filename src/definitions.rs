@@ -83,9 +83,10 @@ pub struct EnvironmentVariables {
     pub errors: Vec<String>
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone, Default)]
 pub enum Conclusion {
     /// All trials succeeded, so the implicit layers are probably fine.
+    #[default]
     Healthy,
     /// The default trial (with all implicit layers) succeeded, but not all trials succeeded.
     WeirdHealthy,

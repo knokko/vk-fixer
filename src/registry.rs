@@ -189,29 +189,6 @@ pub fn is_enabled(layer: &ImplicitLayer) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn print_implicit_layers_of_current_machine() {
-        let mut errors = Vec::new();
-        if let Ok(layers) = enumerate_layers_of_hkey(HKEY_LOCAL_MACHINE, ImplicitRegistry::LocalMachine, &mut errors) {
-            for layer in layers {
-                println!("{:?}", layer);
-            }
-        }
-        if let Ok(layers) = enumerate_layers_of_hkey(HKEY_CURRENT_USER, ImplicitRegistry::CurrentUser, &mut errors) {
-            for layer in layers {
-                println!("{:?}", layer);
-            }
-        }
-
-        if errors.len() > 0 {
-            println!("One or more errors occurred:");
-            for error in errors {
-                println!("{}", error);
-            }
-        }
-    }
-
     #[test]
     fn test_parsing_single_layer() {
         let mut layers = Vec::new();

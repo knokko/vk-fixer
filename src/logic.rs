@@ -132,8 +132,7 @@ pub fn draw_conclusion(results: &TestResults) -> Conclusion {
 #[cfg(test)]
 mod tests {
     use ash::vk;
-    use crate::*;
-    use crate::definitions::{Conclusion, TrialResult};
+    use crate::definitions::{Conclusion, TestResults, TrialResult, VersionedTrialResults};
     use crate::logic::draw_conclusion;
 
     fn failed_all() -> VersionedTrialResults {
